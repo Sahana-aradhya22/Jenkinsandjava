@@ -1,4 +1,4 @@
-name: Jenkinsandjava ECR Test
+name: Jenkinsandjava CI - ECR
 
 on:
   workflow_dispatch:
@@ -7,11 +7,18 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  AWS_REGION: ap-south-1
+  AWS_ACCOUNT_ID: "334575333234"
+  ECR_REPOSITORY: javajenkinsgithub
+
 jobs:
-  ecr-test:
+  build-test-push:
+    name: Build, Test and Push to ECR
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout source code
         uses: actions/checkout@v4
 
@@ -19,33 +26,46 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: "8"
           cache: maven
 
-      - name: Run Maven tests
+      - name: Display Java version
+        run: java -version
+
+      - name: Display Maven version
+        run: mvn -version
+
+      - name: Run unit tests
         run: mvn clean test
 
-      - name: Build WAR
+      - name: Package application
         run: mvn clean package
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::334575333234:role/GitHubActionsECRRole
           aws-region: ap-south-1
+          audience: sts.amazonaws.com
 
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
       - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build Docker image
         run: |
           docker build \
-            -t 334575333234.dkr.ecr.ap-south-1.amazonaws.com/javajenkinsgithub:${{ github.run_number }} .
+            -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }} .
 
-      - name: Push Docker image
+      - name: Push Docker image to ECR
         run: |
           docker push \
-            334575333234.dkr.ecr.ap-south-1.amazonaws.com/javajenkinsgithub:${{ github.run_number }}
+            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }}
+
+      - name: Show image
+        run: |
+          echo "Image pushed:"
+          echo "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }}"
